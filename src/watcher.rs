@@ -125,6 +125,8 @@ async fn finish_device(id: &str, mut task: DeviceTask) {
     {
         log::warn!("Device {id} task failed: {err}");
     }
+    #[cfg(windows)]
+    crate::strip_backdrop::stop(id).await;
     if DEVICES.write().await.remove(id).is_some() {
         match timeout(
             Duration::from_secs(2),

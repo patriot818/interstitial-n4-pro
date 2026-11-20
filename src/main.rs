@@ -20,12 +20,23 @@ use watcher::watcher_task;
 #[cfg(not(target_os = "windows"))]
 use tokio::signal::unix::{SignalKind, signal};
 
+#[cfg(windows)]
+mod ambient;
 mod config;
+#[cfg(windows)]
+mod desktop_monitor;
+#[cfg(windows)]
+mod desktop_state;
 mod device;
+#[cfg(windows)]
+mod frame_jpeg;
 mod inputs;
 mod led_config;
 mod managed_device;
 mod mappings;
+mod strip;
+#[cfg(windows)]
+mod strip_backdrop;
 mod watcher;
 
 pub static DEVICES: LazyLock<RwLock<HashMap<String, Arc<ManagedDevice>>>> =
@@ -139,6 +150,12 @@ async fn sigterm() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(windows)]
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--check-encoder")) {
+        frame_jpeg::probe()?;
+        println!("N4 JPEG 800x160 OK");
+        return Ok(());
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let result = tokio::select! {

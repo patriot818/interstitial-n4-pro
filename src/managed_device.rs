@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum PowerState {
+pub(crate) enum PowerState {
     Awake,
     Sleeping,
 }
@@ -15,6 +15,8 @@ pub struct ManagedDevice<D = Device> {
     device: D,
     power: Mutex<PowerState>,
     cancel: CancellationToken,
+    #[cfg(windows)]
+    awake: tokio::sync::watch::Sender<bool>,
 }
 
 impl<D> ManagedDevice<D> {
@@ -23,7 +25,21 @@ impl<D> ManagedDevice<D> {
             device,
             power: Mutex::new(PowerState::Awake),
             cancel,
+            #[cfg(windows)]
+            awake: tokio::sync::watch::channel(true).0,
         }
+    }
+
+    #[cfg(windows)]
+    pub fn power_changes(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.awake.subscribe()
+    }
+
+    /// SDK calls on the display thread share the HID power transition lock.
+    #[cfg(windows)]
+    pub(crate) fn awake_guard(&self) -> Option<tokio::sync::MutexGuard<'_, PowerState>> {
+        let power = self.power.blocking_lock();
+        (*power == PowerState::Awake && !self.cancel.is_cancelled()).then_some(power)
     }
 
     pub async fn with_awake_device(
@@ -54,6 +70,8 @@ impl<D> ManagedDevice<D> {
             result = async {
                 let mut current = self.power.lock().await;
                 operation(&self.device).await?;
+                #[cfg(windows)]
+                if *current != power { self.awake.send_replace(power == PowerState::Awake); }
                 *current = power;
                 Ok(())
             } => result,
@@ -101,6 +119,41 @@ mod tests {
     use futures_lite::future::poll_once;
     use std::pin::pin;
     use tokio::sync::oneshot;
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn display_observes_successful_transitions_and_skips_sleeping_or_retired_handles() {
+        let cancel = CancellationToken::new();
+        let device = Arc::new(ManagedDevice::new((), cancel.clone()));
+        let mut changes = device.power_changes();
+        let can_draw = || {
+            let device = device.clone();
+            tokio::task::spawn_blocking(move || device.awake_guard().is_some())
+        };
+        assert!(can_draw().await.unwrap());
+        assert!(
+            device
+                .set_power(PowerState::Sleeping, async |_| Err(MirajazzError::BadData))
+                .await
+                .is_err()
+        );
+        assert!(!changes.has_changed().unwrap());
+        device
+            .set_power(PowerState::Sleeping, async |_| Ok(()))
+            .await
+            .unwrap();
+        assert!(changes.has_changed().unwrap());
+        assert!(!*changes.borrow_and_update());
+        assert!(!can_draw().await.unwrap());
+        device
+            .set_power(PowerState::Awake, async |_| Ok(()))
+            .await
+            .unwrap();
+        assert!(*changes.borrow_and_update());
+        assert!(can_draw().await.unwrap());
+        cancel.cancel();
+        assert!(!can_draw().await.unwrap());
+    }
 
     #[tokio::test]
     async fn cancellation_releases_inflight_and_queued_commands() {

@@ -84,6 +84,8 @@
           '';
         };
         windows = crossPackage pkgs.pkgsCross.mingwW64 {
+          nativeBuildInputs = [ pkgs.cmake pkgs.nasm ];
+          dontUseCmakeConfigure = true;
           # Avoid pulling Wine into the build merely to set an unused test runner.
           __CRANE_EXPORT_CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER = "${pkgs.coreutils}/bin/false";
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-C target-feature=+crt-static -L native=${pkgs.pkgsCross.mingwW64.windows.pthreads}/lib";
@@ -157,13 +159,13 @@
           runtimeInputs = [
             pkgs.coreutils
             pkgs.zip
+            pkgs.unzip
             pkgs.jq
             pkgs.file
             pkgs.gnugrep
           ];
           text = ''
             manifest_path=${./manifest.json}
-            assets_path=${./assets}
           ''
           + builtins.readFile ./nix/package-plugin.sh;
         };

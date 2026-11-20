@@ -1,11 +1,11 @@
-id := "com.github.ambiso.opendeck-akp05.sdPlugin"
+id := "com.stevengriffin.interstitial.n4.sdPlugin"
 
 release: bump tag
 
-package binaries="build/binaries":
-    nix run .#package-plugin -- "{{binaries}}" build/opendeck-akp05.plugin.zip
+package windows_zip binaries="build/binaries":
+    nix run .#package-plugin -- "{{binaries}}" "{{windows_zip}}" build/interstitial-n4-pro.plugin.zip
 
-build-all: build-linux build-win build-mac
+build-unix: build-linux build-mac
 
 install-local: build-linux
     mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/opendeck/plugins/{{id}}"
@@ -50,4 +50,4 @@ build-win:
     install -m755 build/nix-windows/bin/opendeck-akp05.exe build/binaries/opendeck-akp05-win.exe
 
 clean:
-    sudo rm -rf target/
+    cargo clean

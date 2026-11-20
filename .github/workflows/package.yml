@@ -1,60 +1,73 @@
-name: Package
-
-on:
-  push:
-    branches: ["main"]
-    tags: ["*"]
-  pull_request:
-    branches: ["main"]
-  workflow_dispatch:
-
+name: Verify plugin
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
-
 jobs:
-  build:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Locate NASM
+        shell: pwsh
+        run: |
+          if (!(Get-Command nasm -ErrorAction SilentlyContinue)) {
+            choco install nasm -y --no-progress
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            $nasm = Join-Path $env:ProgramFiles NASM
+            if (!(Test-Path "$nasm/nasm.exe")) { throw 'NASM installation not found' }
+            $nasm >> $env:GITHUB_PATH
+          }
+      - name: Check Windows x64
+        shell: pwsh
+        run: |
+          cargo test --release --locked --all-targets --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --release --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+      - name: Build Windows package
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $crt = Get-ChildItem "$vs/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT/vcruntime140.dll" | Sort-Object { $_.VersionInfo.FileVersionRaw } -Descending | Select-Object -First 1
+          ./scripts/package-windows.ps1 -CrtDirectory $crt.DirectoryName
+      - uses: actions/upload-artifact@v7
+        with:
+          name: interstitial-n4-windows-x64
+          path: build/*.zip
+          if-no-files-found: error
+  unix:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      - name: Native build, tests, formatting, lint, and audit
-        run: nix flake check --print-build-logs
-      - name: Build release executables for all platforms
-        run: |
-          nix build .#linux-static --out-link result-linux --print-build-logs
-          nix build .#windows --out-link result-windows --print-build-logs
-          nix build .#macos-universal --out-link result-macos --print-build-logs
-          mkdir -p binaries
-          cp result-linux/bin/opendeck-akp05 binaries/opendeck-akp05-linux
-          cp result-windows/bin/opendeck-akp05.exe binaries/opendeck-akp05-win.exe
-          cp result-macos/bin/opendeck-akp05 binaries/opendeck-akp05-mac
+      - run: nix flake check --print-build-logs
+      - run: nix develop --command just build-unix
       - uses: actions/upload-artifact@v7
         with:
-          name: binaries
-          path: binaries/
+          name: unix-binaries
+          path: build/binaries/
           if-no-files-found: error
 
   package:
-    needs: build
+    needs: [windows, unix]
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       - uses: actions/download-artifact@v8
         with:
-          name: binaries
-          path: binaries
-      - name: Package all platforms
-        run: nix run .#package-plugin -- binaries opendeck-akp05.plugin.zip
+          name: unix-binaries
+          path: build/binaries
+      - uses: actions/download-artifact@v8
+        with:
+          name: interstitial-n4-windows-x64
+          path: build/windows
+      - run: nix run .#package-plugin -- build/binaries build/windows/*.zip build/interstitial-n4-pro.plugin.zip
       - uses: actions/upload-artifact@v7
         with:
-          name: opendeck-akp05.plugin
-          path: opendeck-akp05.plugin.zip
+          name: interstitial-n4-pro
+          path: build/interstitial-n4-pro.plugin.zip
           if-no-files-found: error
-      - name: Release
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v3
-        with:
-          files: opendeck-akp05.plugin.zip

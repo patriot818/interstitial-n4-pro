@@ -1,152 +1,31 @@
-![Plugin Icon](assets/icon.png)
+# Interstitial N4 Pro
 
-# OpenDeck Ajazz AKP05 / Mirabox N4 Plugin
+A Rust device plugin for OpenDeck, based on [ambiso/opendeck-akp05 v0.11.1](https://github.com/ambiso/opendeck-akp05/tree/v0.11.1). It incorporates the [upstream sleep, reconnect and OpenAction 2.8 updates](https://github.com/ambiso/opendeck-akp05/commit/d0a5a795304c5f36ae3eb21686bf5a5c1385f588). It supports the upstream AKP05/N4 device family and adds an optional continuous Windows display for the **VSDinside N4 Pro** (USB `5548:1023`). The four encoder zones remain independently editable in OpenDeck.
 
-An unofficial plugin for Mirabox N4-family devices
+## Getting started on Windows
 
-## Community
+Use OpenDeck 2.5.0 or newer. Build the Windows x64 ZIP using the instructions below. Install the ZIP in OpenDeck with **Plugins → Install from file**. The Interstitial fork has its own plugin identity and keeps the upstream device namespace, `n4`. Use one active device plugin for the controller at a time. Save a copy of existing OpenDeck profiles before switching device plugins.
 
-Questions, troubleshooting, or sharing your setup? [Join the Signal group](https://signal.group/#CjQKIHyUkzhTbUGZIeMoFhrnPfTglV_zx8x2wfO7oyA6uthqEhA7ZNnwF_EUd5XmaNIVPtEN).
+Assign actions to the ten square keys and four knobs in OpenDeck. For a continuous strip, enable it in `%APPDATA%\Interstitial\config.toml`. For sensor graphs or metric-driven ring colors, also install Interstitial Hardware Graphs. Both public plugins use the Interstitial ring channel. See the [continuous strip guide](docs/continuous-strip.md) for alignment, user-provided themes, lock behavior and light controls.
 
-## OpenDeck version
+## Build and test
 
-Requires OpenDeck 2.5.0 or newer
+The Windows build uses stable Rust, the x64 MSVC target, Visual Studio C++ Build Tools, CMake, NASM and PowerShell 7. Put the build tools on PATH. Supply the directory containing the release x64 VC runtime DLLs from your Visual Studio installation.
 
-## Supported devices
-
-- Mirabox N4E (6603:1007)
-- Mirabox N4 (6602:1001)
-- Mirabox N4 Pro E (5548:1021)
-- Mirabox N4 Pro (5548:1008)
-- Ajazz AKP05E (0300:3004)
-- Ajazz AKP05E Pro (0300:3013)
-- Ajazz AKP05 (0300:3006)
-- VSDInside N4 (5548:1004)
-- VSDInside N4 Pro (5548:1023)
-- Mars Gaming MSD-Pro (0B00:1003)
-- Soomfon CN003 (1500:3002)
-- Streonor S10 Pro (1500:3007)
-- Redragon SS552 (0200:3001)
-
-## Platform support
-
-- Linux: Guaranteed, if stuff breaks - I'll probably catch it before public release
-- Mac: Zero effort, no tests before release, if stuff breaks - too bad, it's up to you to contribute fixes
-- Windows: Zero effort, no tests before release, if stuff breaks - too bad, it's up to you to contribute fixes
-
-## Installation
-
-1. Download an archive from [releases](https://github.com/ambiso/opendeck-akp05/releases)
-2. In OpenDeck: Plugins -> Install from file
-3. Download [udev rules](./40-opendeck-akp05.rules) and install them by copying into `/etc/udev/rules.d/` and running `sudo udevadm control --reload-rules`
-4. Unplug and plug again the device, restart OpenDeck
-
-## Configuration
-
-Create `~/.config/opendeck-akp05/config.toml`.
-(Windows: `%APPDATA%\opendeck-akp05\config.toml`, macOS: `~/Library/Application Support/opendeck-akp05/config.toml`)
-
-```toml
-# N4 Pro-family only. Omit to leave the device's current setting alone.
-vibration = false
-
-[leds]
-brightness = 100 # 0-100
-
-[leds.mode.Static]
-colors = [[255, 0, 128]] # RGB — one entry per knob, missing entries repeat the last value
+```powershell
+cargo test --release --locked --all-targets --target x86_64-pc-windows-msvc
+cargo clippy --release --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+./scripts/package-windows.ps1 -CrtDirectory '<path to x64 Microsoft.VC*.CRT directory>'
 ```
 
-By default no LED commands are sent, so the device keeps its own built-in effect. Each LED a different color:
+The Windows ZIP is written to `build/`. The packaged executable accepts `--check-encoder` for an offline full-strip JPEG round trip. Visual output, physical inputs, vibration and reconnect behavior require compatible hardware. For upstream Linux device access, use the included [udev rules](40-opendeck-akp05.rules). Consult [upstream](https://github.com/ambiso/opendeck-akp05) for the inherited device family and platform build conventions.
 
-```toml
-[leds]
-brightness = 100
+On Linux, `just build-linux` produces the static Linux executable and `just build-mac` cross-compiles the universal macOS executable using the pinned Nix flake. Run `just package <windows-zip>` after those builds to combine them with the complete MSVC package. This preserves the vendor transport, SIMD encoder notices and app-local runtime in the combined ZIP. CI uploads artifacts for inspection.
 
-[leds.mode.Static]
-colors = [
-    [255, 0,   0  ], # RGB knob 1
-    [0,   255, 0  ], # RGB knob 2
-    [0,   0,   255], # RGB knob 3
-    [255, 255, 0  ], # RGB knob 4
-]
-```
+## Attribution
 
-When OpenDeck is being terminated, a disconnect signal is sent to the device, which results in a hardcoded red for all knobs.
+The original plugin credits the [elgato-streamdeck contributors](https://github.com/streamduck-org/elgato-streamdeck) and the [naerschhersch](https://github.com/naerschhersch/opendeck-akp05), [GrauBlitz](https://github.com/GrauBlitz/opendeck-akp05) and [maillota](https://github.com/maillota/opendeck-akp05) forks. The icon comes from the naerschhersch project. This fork retains the upstream [GPL license](LICENSE).
 
-### `leds.toml` override
+The Windows display uses the [pinned MiraBox Device SDK](https://github.com/MiraboxSpace/StreamDock-Device-SDK/tree/fc124cb5bc8fe0cd6c72d3f2af80588adc7dcffb) and its [notice](vendor/mirabox/LICENSE). This software is based in part on the work of the Independent JPEG Group. The [JPEG notices](vendor/jpeg-notices) accompany the SIMD encoder.
 
-An optional `~/.config/opendeck-akp05/leds.toml` in the top-level LED schema (without the `[leds]` prefix) overrides just the LED section of `config.toml`:
-
-```toml
-brightness = 100
-
-[mode.Static]
-colors = [[255, 0, 128]]
-```
-
-### Vibration
-
-Some N4 Pro-family devices (N4 Pro, N4 Pro E, VSDInside N4 Pro) vibrate on key press. Set `vibration = false` in `config.toml` to silence it, `true` to explicitly enable it, or omit the field to leave the current setting alone. The setting is applied on each connect. Devices that don't expose the config command in their firmware will log a warning and skip it.
-
-## Adding new devices
-
-Read [this wiki page](https://github.com/4ndv/opendeck-akp03/wiki/Adding-support-for-new-devices) for more information.
-
-## Building
-
-### Prerequisites
-
-Install Nix with flakes enabled. The pinned flake supplies Rust (1.88 or newer),
-linkers, test tools, and packaging tools; Docker and manually installed cross
-compilers are not required.
-
-```sh
-nix develop
-nix flake check --print-build-logs
-```
-
-### Release executables
-
-On Linux:
-
-```sh
-just build-linux # Fully static musl binary; no host glibc or Nix store required
-just build-win   # Cross-compiled x86-64 Windows executable
-just build-mac   # Cross-compiled universal macOS executable (Intel + ARM)
-```
-
-`just build-mac` also works on macOS using the same pinned SDK/Zig toolchain:
-
-```sh
-just build-mac   # Universal binary containing both x86-64 and arm64
-```
-
-These commands put executables in `build/binaries/`. To assemble a release
-entirely on Linux, run `just build-all`, then `just package`. The result is
-`build/opendeck-akp05.plugin.zip`; packaging rejects missing platforms and an
-existing output file. Remove or rename an old ZIP before packaging again.
-
-The Linux-to-macOS build uses Nix-provided cargo-zigbuild and a hash-pinned
-macOS 11.3 SDK, matching the previous Docker toolchain. It compiles and checks
-both binary architectures locally; executing macOS binaries still requires macOS.
-
-CI uses Nix for every build and check, cross-compiles all release executables
-on a Linux runner, then combines them into one ZIP.
-Tag pushes publish that ZIP as a GitHub release.
-
-The sandboxed audit uses the advisory database pinned in `flake.lock` and skips
-yanked-crate checks, which require registry network access. Update the database
-with `nix flake update advisory-db`. The exception lives only in the Nix audit
-derivation; ordinary `cargo audit` retains its default yanked-crate checks.
-
-## Acknowledgments
-
-This plugin is heavily based on work by contributors of [elgato-streamdeck](https://github.com/streamduck-org/elgato-streamdeck) crate
-
-Further inspiration was taken from these sister repos:
-- https://github.com/naerschhersch/opendeck-akp05
-- https://github.com/GrauBlitz/opendeck-akp05
-- https://github.com/maillota/opendeck-akp05
-
-The icon was yoinked from https://github.com/naerschhersch/opendeck-akp05/
+The upstream project also has a [Signal community group](https://signal.group/#CjQKIHyUkzhTbUGZIeMoFhrnPfTglV_zx8x2wfO7oyA6uthqEhA7ZNnwF_EUd5XmaNIVPtEN).
